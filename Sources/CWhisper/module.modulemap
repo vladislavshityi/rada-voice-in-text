@@ -1,0 +1,10 @@
+module CWhisper [system] {
+    header "shim.h"
+    link "whisper-bundle"
+    link "c++"
+    link framework "Accelerate"
+    link framework "Foundation"
+    link framework "Metal"
+    link framework "MetalKit"
+    export *
+}
