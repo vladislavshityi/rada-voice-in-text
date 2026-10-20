@@ -20,6 +20,11 @@ struct MenuContent: View {
 
         Divider()
 
+        Button(fileItemTitle) { app.openFileTranscription() }
+            .keyboardShortcut("o")
+
+        Divider()
+
         Button("Скопировать последний текст") { app.copyLastTranscript() }
             .disabled(controller.lastTranscript == nil)
 
@@ -29,6 +34,15 @@ struct MenuContent: View {
             .keyboardShortcut(",")
         Button("Выйти из Rada") { NSApp.terminate(nil) }
             .keyboardShortcut("q")
+    }
+
+    private var fileItemTitle: String {
+        switch app.files.phase {
+        case .decoding: "Расшифровка файла: чтение…"
+        case .transcribing(let progress): "Расшифровка файла: \(Int(progress * 100))%"
+        case .finished: "Расшифровка файла готова"
+        default: "Расшифровать аудиофайл…"
+        }
     }
 
     private var status: String {

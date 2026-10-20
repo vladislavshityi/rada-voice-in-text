@@ -10,7 +10,9 @@ final class AppModel {
     let dictionary = DictionaryStore()
     let permissions = Permissions()
     let modelInstaller = ModelInstaller()
+    let engines: EngineProvider
     let controller: DictationController
+    let files: FileTranscriptionController
 
     /// `false` when another app already owns the configured shortcut.
     private(set) var shortcutAvailable = true
@@ -18,11 +20,14 @@ final class AppModel {
     @ObservationIgnored private let hotkeys = HotkeyCenter()
     @ObservationIgnored private lazy var hud = HUDController(controller: controller)
     @ObservationIgnored private lazy var settingsWindow = SettingsWindowController(app: self)
+    @ObservationIgnored private lazy var filesWindow = FileTranscriptionWindowController(app: self)
 
     init() {
+        engines = EngineProvider(settings: settings, modelInstaller: modelInstaller)
         controller = DictationController(
-            settings: settings, dictionary: dictionary, permissions: permissions, modelInstaller: modelInstaller
+            settings: settings, dictionary: dictionary, permissions: permissions, engines: engines
         )
+        files = FileTranscriptionController(settings: settings, dictionary: dictionary, engines: engines)
     }
 
     func launch() {
@@ -75,6 +80,12 @@ final class AppModel {
         settingsWindow.show(section)
     }
 
+    /// Shows the file transcription window; with a URL, starts recognizing it right away.
+    func openFileTranscription(_ url: URL? = nil) {
+        filesWindow.show()
+        if let url { files.transcribe(url) }
+    }
+
     func copyLastTranscript() {
         guard let text = controller.lastTranscript else { return }
         NSPasteboard.general.clearContents()
@@ -82,7 +93,8 @@ final class AppModel {
     }
 
     func deleteModel() {
-        controller.releaseEngines()
+        files.reset()
+        engines.release()
         modelInstaller.remove()
     }
 

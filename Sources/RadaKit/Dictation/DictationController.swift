@@ -29,22 +29,21 @@ public final class DictationController {
     private let settings: AppSettings
     private let dictionary: DictionaryStore
     private let permissions: Permissions
-    private let modelInstaller: ModelInstaller
+    private let engines: EngineProvider
     private let capture = AudioCapture()
     private let inserter = TextInserter()
     private let log = Logger(subsystem: "app.rada", category: "dictation")
 
-    @ObservationIgnored private var whisperEngine: WhisperEngine?
     @ObservationIgnored private var session: DictationSession?
     @ObservationIgnored private var sessionID = UUID()
     @ObservationIgnored private var isStarting = false
     @ObservationIgnored private var timers: [Task<Void, Never>] = []
 
-    public init(settings: AppSettings, dictionary: DictionaryStore, permissions: Permissions, modelInstaller: ModelInstaller) {
+    public init(settings: AppSettings, dictionary: DictionaryStore, permissions: Permissions, engines: EngineProvider) {
         self.settings = settings
         self.dictionary = dictionary
         self.permissions = permissions
-        self.modelInstaller = modelInstaller
+        self.engines = engines
 
         capture.onLevel = { [weak self] level in self?.level = level }
         capture.onInterruption = { [weak self] in self?.handleMicrophoneLoss() }
@@ -89,7 +88,12 @@ public final class DictationController {
         guard !isBusy, !isStarting else { return }
         isStarting = true
         defer { isStarting = false }
-        guard let engine = makeEngine() else { return }
+        let engine: any TranscriptionEngine
+        do {
+            engine = try engines.engine()
+        } catch {
+            return fail(error)
+        }
         guard await ensureMicrophoneAccess() else { return }
 
         let buffer: SampleBuffer
@@ -174,31 +178,6 @@ public final class DictationController {
     }
 
     // MARK: - Helpers
-
-    private func makeEngine() -> (any TranscriptionEngine)? {
-        switch settings.engine {
-        case .whisper:
-            guard modelInstaller.isInstalled else {
-                fail(.modelMissing)
-                return nil
-            }
-            if let whisperEngine { return whisperEngine }
-            let engine = WhisperEngine(modelURL: modelInstaller.model.localURL, vadModelURL: AppPaths.bundledVADModel)
-            whisperEngine = engine
-            return engine
-        case .appleDictation:
-            guard #available(macOS 26, *) else {
-                fail(.engineUnavailable)
-                return nil
-            }
-            return AppleDictationEngine()
-        }
-    }
-
-    /// Releases the Whisper model, e.g. after the model file was deleted.
-    public func releaseEngines() {
-        whisperEngine = nil
-    }
 
     private func ensureMicrophoneAccess() async -> Bool {
         permissions.refresh()

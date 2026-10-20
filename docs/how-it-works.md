@@ -53,9 +53,10 @@ Rada использует гибрид: **фоновая расшифровка 
 Sources/
 ├─ CWhisper/            C-модуль whisper.cpp (статическая библиотека с Metal)
 ├─ RadaKit/             вся логика, без UI
-│  ├─ Audio/            AudioCapture (AVAudioEngine → 16 кГц mono), SampleBuffer, ChunkPlanner (паузы)
-│  ├─ Transcription/    TranscriptionEngine, WhisperEngine, AppleDictationEngine, ModelInstaller
+│  ├─ Audio/            AudioCapture (AVAudioEngine → 16 кГц mono), AudioFileDecoder, SampleBuffer, ChunkPlanner (паузы)
+│  ├─ Transcription/    TranscriptionEngine, EngineProvider, WhisperEngine, AppleDictationEngine, ModelInstaller
 │  ├─ Dictation/        DictationController (сценарий), DictationSession (фоновые фрагменты)
+│  ├─ Files/            FileTranscriptionController, FileTranscriber (расшифровка файлов)
 │  ├─ Text/             TextProcessor: артефакты → команды → словарь → нормализация
 │  ├─ Dictionary/       модель и хранилище словаря (JSON)
 │  ├─ Insertion/        TextInserter (⌘V + восстановление буфера), контекст курсора (AX)
@@ -66,6 +67,7 @@ Sources/
    ├─ Mascot/           живая сфера: позы, аниматор, рендерер
    ├─ HUD/              плавающий индикатор (NSPanel, Liquid Glass)
    ├─ MenuBar/          меню и значок
+   ├─ Files/            окно «Расшифровка файла»
    ├─ Settings/         окно настроек: Основные, Распознавание, Словарь, Конфиденциальность
    ├─ Components/       карточки, строки, бейджи, клавиши — в духе shadcn/ui
    └─ Icon/             генерация иконки приложения из маскота
@@ -73,10 +75,17 @@ Sources/
 
 Сценарий: `HotkeyCenter` → `DictationController.toggle()` → `AudioCapture` + `DictationSession` (фрагменты → `TranscriptionEngine`) → `TextProcessor` → `TextInserter` → индикатор.
 
+Расшифровка файла: `AudioFileDecoder` (AVAssetReader → 16 кГц mono, все дорожки сведены) → `FileTranscriber` режет запись в паузах на куски до 28 с тем же `ChunkPlanner`, пауза длиннее 1,2 с начинает абзац → `TranscriptionEngine` по очереди → `TextProcessor` для каждого абзаца (без голосовых команд: в интервью «новый абзац» — это просто слова).
+
+Диктовка и расшифровка файла делят один экземпляр Whisper (`EngineProvider`), модель загружается в память один раз. Вызовы идут через одну последовательную очередь, поэтому диктовать можно и во время расшифровки файла: фраза распознается, как только закончится текущий кусок файла. Отмена привязана к задаче, вызвавшей распознавание, и не прерывает соседние.
+
 ## Ограничения
 
 - Качество проверено на синтезированной речи (голос Milena) и журналистских фразах с именами и числами. Проверка на живом голосе журналистки, в шуме и с акцентами — следующий шаг.
 - Только Apple Silicon (сборка arm64, Metal).
+- Расшифровка файла на M1 идёт примерно втрое быстрее реального времени: минута записи — около 20 с, час — около 20 минут. Пока идёт расшифровка, Mac не уходит в сон, а диктовка может ждать до нескольких секунд.
+- Файлы длиннее 3 часов не принимаются: запись целиком держится в памяти (≈ 230 МБ на час). Форматы — те, что читает AVFoundation; OGG/Opus и WebM не поддерживаются.
+- Разделения по говорящим нет: в интервью реплики разных людей разбиваются на абзацы только по паузам.
 - Первые ~0,2 с после нажатия клавиши уходят на запуск микрофона. Начинайте говорить после звукового сигнала.
 - Esc перехватывается только во время записи и распознавания.
 - Liquid Glass включается на macOS 26+. На macOS 15 используется системный материал.

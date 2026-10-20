@@ -1,8 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Hosts the settings UI in a regular window. While it is open Rada shows a
-/// Dock icon so the window is easy to find; when it closes Rada returns to the menu bar.
+/// Hosts the settings UI in a regular window (see `DockPresence`).
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let app: AppModel
@@ -18,7 +17,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         if let section { model.selection = section }
         let window = window ?? makeWindow()
         self.window = window
-        NSApp.setActivationPolicy(.regular)
+        DockPresence.windowOpened(window)
         window.makeKeyAndOrderFront(nil)
         NSApp.activate()
     }
@@ -61,6 +60,6 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         model.stopRecordingShortcut(app: app)
         permissionRefresh?.invalidate()
         permissionRefresh = nil
-        NSApp.setActivationPolicy(.accessory)
+        if let window { DockPresence.windowClosed(window) }
     }
 }

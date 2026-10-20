@@ -1,7 +1,6 @@
 @preconcurrency import AVFoundation
 import Foundation
 import Speech
-import Synchronization
 
 /// Apple's on-device dictation model (SpeechAnalyzer + DictationTranscriber).
 ///
@@ -9,8 +8,6 @@ import Synchronization
 /// without punctuation, so Whisper is the default engine.
 @available(macOS 26, *)
 public final class AppleDictationEngine: TranscriptionEngine {
-    private let currentAnalyzer = Mutex<SpeechAnalyzer?>(nil)
-
     public init() {}
 
     public func prepare() async throws {}
@@ -23,32 +20,30 @@ public final class AppleDictationEngine: TranscriptionEngine {
         }
 
         let analyzer = SpeechAnalyzer(modules: [transcriber])
-        currentAnalyzer.withLock { $0 = analyzer }
-        defer { currentAnalyzer.withLock { $0 = nil } }
+        let text = try await withTaskCancellationHandler {
+            if !request.vocabulary.isEmpty {
+                let context = AnalysisContext()
+                context.contextualStrings[.general] = request.vocabulary
+                try await analyzer.setContext(context)
+            }
 
-        if !request.vocabulary.isEmpty {
-            let context = AnalysisContext()
-            context.contextualStrings[.general] = request.vocabulary
-            try await analyzer.setContext(context)
+            let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber])
+            let buffer = try Self.makeBuffer(samples, convertedTo: format)
+            let (input, continuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
+
+            async let collected = transcriber.results.reduce(into: "") { text, result in
+                text += String(result.text.characters)
+            }
+            try await analyzer.start(inputSequence: input)
+            continuation.yield(AnalyzerInput(buffer: buffer))
+            continuation.finish()
+            try await analyzer.finalizeAndFinishThroughEndOfInput()
+            return try await collected.trimmingCharacters(in: .whitespacesAndNewlines)
+        } onCancel: {
+            Task { await analyzer.cancelAndFinishNow() }
         }
-
-        let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber])
-        let buffer = try Self.makeBuffer(samples, convertedTo: format)
-        let (input, continuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
-
-        async let collected = transcriber.results.reduce(into: "") { text, result in
-            text += String(result.text.characters)
-        }
-        try await analyzer.start(inputSequence: input)
-        continuation.yield(AnalyzerInput(buffer: buffer))
-        continuation.finish()
-        try await analyzer.finalizeAndFinishThroughEndOfInput()
-        return try await collected.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    public func cancel() {
-        guard let analyzer = currentAnalyzer.withLock({ $0 }) else { return }
-        Task { await analyzer.cancelAndFinishNow() }
+        if Task.isCancelled { throw TranscriptionError.cancelled }
+        return text
     }
 
     // MARK: - Language assets

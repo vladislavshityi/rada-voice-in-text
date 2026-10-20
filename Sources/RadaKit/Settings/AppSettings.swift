@@ -12,6 +12,8 @@ public final class AppSettings {
     public var voiceCommandsEnabled: Bool { didSet { store(voiceCommandsEnabled, for: .voiceCommands) } }
     public var smartSpacingEnabled: Bool { didSet { store(smartSpacingEnabled, for: .smartSpacing) } }
     public var soundsEnabled: Bool { didSet { store(soundsEnabled, for: .sounds) } }
+    /// Mark paragraphs of transcribed files with their time in the recording.
+    public var fileTimestampsEnabled: Bool { didSet { store(fileTimestampsEnabled, for: .fileTimestamps) } }
 
     private let defaults: UserDefaults
 
@@ -24,6 +26,7 @@ public final class AppSettings {
         voiceCommandsEnabled = Self.load(.voiceCommands, from: defaults) ?? true
         smartSpacingEnabled = Self.load(.smartSpacing, from: defaults) ?? true
         soundsEnabled = Self.load(.sounds, from: defaults) ?? true
+        fileTimestampsEnabled = Self.load(.fileTimestamps, from: defaults) ?? false
     }
 
     /// Restores defaults and removes every stored preference.
@@ -36,10 +39,11 @@ public final class AppSettings {
         voiceCommandsEnabled = true
         smartSpacingEnabled = true
         soundsEnabled = true
+        fileTimestampsEnabled = false
     }
 
     private enum Key: String, CaseIterable {
-        case shortcut, engine, language, insertionMode, voiceCommands, smartSpacing, sounds
+        case shortcut, engine, language, insertionMode, voiceCommands, smartSpacing, sounds, fileTimestamps
     }
 
     private func store<Value: Encodable>(_ value: Value, for key: Key) {

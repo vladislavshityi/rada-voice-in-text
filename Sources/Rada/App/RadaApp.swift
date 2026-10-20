@@ -18,4 +18,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         MainActor.assumeIsolated { app.launch() }
     }
+
+    /// Files opened via Finder («Открыть в программе → Rada») or dropped on the Dock icon.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let url = urls.first else { return }
+        MainActor.assumeIsolated { app.openFileTranscription(url) }
+    }
 }

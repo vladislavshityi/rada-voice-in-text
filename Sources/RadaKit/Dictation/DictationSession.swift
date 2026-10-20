@@ -16,6 +16,7 @@ actor DictationSession {
     private var consumedSamples = 0
     private var transcripts: [String] = []
     private var queue: Task<Void, Error>?
+    private var chunkTasks: [Task<Void, Error>] = []
     private var monitor: Task<Void, Never>?
 
     init(engine: any TranscriptionEngine, buffer: SampleBuffer, request: TranscriptionRequest) {
@@ -47,8 +48,7 @@ actor DictationSession {
 
     func cancel() {
         monitor?.cancel()
-        queue?.cancel()
-        engine.cancel()
+        chunkTasks.forEach { $0.cancel() }
     }
 
     private func cutChunkIfReady() {
@@ -61,7 +61,7 @@ actor DictationSession {
     /// Chunks run strictly in order; each one sees the text of the previous.
     private func enqueue(_ samples: [Float]) {
         let previous = queue
-        queue = Task {
+        let task = Task {
             try await previous?.value
             try Task.checkCancellation()
             var chunkRequest = request
@@ -69,5 +69,7 @@ actor DictationSession {
             let text = try await engine.transcribe(samples, request: chunkRequest)
             transcripts.append(text)
         }
+        queue = task
+        chunkTasks.append(task)
     }
 }

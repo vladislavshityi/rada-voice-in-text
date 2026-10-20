@@ -18,9 +18,9 @@ public struct TranscriptionRequest: Sendable {
 public protocol TranscriptionEngine: Sendable {
     /// Loads models ahead of time; called when recording starts.
     func prepare() async throws
+    /// Cancelling the calling task aborts this call as soon as possible
+    /// and throws `TranscriptionError.cancelled`.
     func transcribe(_ samples: [Float], request: TranscriptionRequest) async throws -> String
-    /// Aborts in-flight transcription as soon as possible.
-    func cancel()
 }
 
 public enum TranscriptionError: LocalizedError {

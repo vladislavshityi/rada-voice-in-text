@@ -1,5 +1,5 @@
 /// Something that stopped a dictation, phrased for the user.
-public enum DictationIssue: Equatable, Sendable {
+public enum DictationIssue: Error, Equatable, Sendable {
     case microphoneDenied
     case microphoneUnavailable
     case microphoneDisconnected

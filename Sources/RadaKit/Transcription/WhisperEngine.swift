@@ -6,7 +6,8 @@ import Synchronization
 /// Whisper (whisper.cpp) running fully on-device with Metal acceleration.
 ///
 /// The model stays in memory between dictations and is released after a
-/// period of inactivity. All whisper.cpp calls happen on one serial queue.
+/// period of inactivity. All whisper.cpp calls happen on one serial queue, so
+/// dictation and file transcription can share one model without doubling memory.
 public final class WhisperEngine: TranscriptionEngine, @unchecked Sendable {
     /// Unload the model after this much inactivity to give memory back.
     private static let idleUnloadDelay: TimeInterval = 10 * 60
@@ -15,7 +16,6 @@ public final class WhisperEngine: TranscriptionEngine, @unchecked Sendable {
     private let modelURL: URL
     private let vadModelURL: URL?
     private let queue = DispatchQueue(label: "app.rada.whisper", qos: .userInitiated)
-    private let abortFlag = AbortFlag()
     private let log = Logger(subsystem: "app.rada", category: "whisper")
 
     // Accessed only on `queue`.
@@ -35,16 +35,18 @@ public final class WhisperEngine: TranscriptionEngine, @unchecked Sendable {
         try await perform { _ = try self.loadedContext() }
     }
 
+    /// Cancelling the calling task aborts only this call, not other work queued on the model.
     public func transcribe(_ samples: [Float], request: TranscriptionRequest) async throws -> String {
-        abortFlag.reset()
-        return try await perform {
-            let context = try self.loadedContext()
-            return try self.run(context, samples: samples, request: request)
+        let abortFlag = AbortFlag()
+        return try await withTaskCancellationHandler {
+            try await perform {
+                if abortFlag.isRaised { throw TranscriptionError.cancelled }
+                let context = try self.loadedContext()
+                return try self.run(context, samples: samples, request: request, abortFlag: abortFlag)
+            }
+        } onCancel: {
+            abortFlag.raise()
         }
-    }
-
-    public func cancel() {
-        abortFlag.raise()
     }
 
     // MARK: - Queue
@@ -88,7 +90,9 @@ public final class WhisperEngine: TranscriptionEngine, @unchecked Sendable {
 
     // MARK: - Inference
 
-    private func run(_ context: OpaquePointer, samples: [Float], request: TranscriptionRequest) throws -> String {
+    private func run(
+        _ context: OpaquePointer, samples: [Float], request: TranscriptionRequest, abortFlag: AbortFlag
+    ) throws -> String {
         var parameters = whisper_full_default_params(WHISPER_SAMPLING_BEAM_SEARCH)
         parameters.beam_search.beam_size = 5
         parameters.n_threads = Int32(min(8, max(2, ProcessInfo.processInfo.activeProcessorCount - 2)))
@@ -173,7 +177,6 @@ private final class AbortFlag: Sendable {
 
     var isRaised: Bool { value.load(ordering: .relaxed) }
     func raise() { value.store(true, ordering: .relaxed) }
-    func reset() { value.store(false, ordering: .relaxed) }
 }
 
 private func withOptionalCString<Result>(

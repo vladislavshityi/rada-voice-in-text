@@ -48,6 +48,20 @@ public struct ChunkPlanner: Sendable {
         return quietest * frameLength
     }
 
+    /// Length in seconds of the silence surrounding sample `index`; 0 if it falls on speech.
+    public func pauseLength(at index: Int, in samples: [Float]) -> Double {
+        let energies = frameEnergies(samples)
+        guard !energies.isEmpty else { return 0 }
+        let quiet = quietThreshold(energies)
+        let frame = min(index / frameLength, energies.count - 1)
+        guard energies[frame] < quiet else { return 0 }
+        var start = frame
+        var end = frame
+        while start > 0, energies[start - 1] < quiet { start -= 1 }
+        while end + 1 < energies.count, energies[end + 1] < quiet { end += 1 }
+        return Double((end - start + 1) * frameLength) / sampleRate
+    }
+
     private func frameEnergies(_ samples: [Float]) -> [Float] {
         stride(from: 0, to: samples.count - frameLength + 1, by: frameLength).map { start in
             var sum: Float = 0
